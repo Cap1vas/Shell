@@ -6,9 +6,12 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <errno.h>
+#include <sys/stat.h>
+
 
 #define MAXLETTERS 10000
 #define MAXARGS 100
+#define MAX_FILES 300
 
 void whichCommand(char *command, char **args, int argc);
 void cdCommand(char ** args, int argc);
@@ -24,7 +27,6 @@ int readingInput(char* str) {
         
         char **args = malloc(MAXARGS * sizeof(char*));
         int argc = 0;
-        
         
         parseCommand(buffer, args, &argc);
         
@@ -82,10 +84,12 @@ void cdCommand(char ** args, int argc){
 }
 
 void lsCommand(char **args, int argc){
-      DIR *dir;
+    struct stat file_stat;
+    DIR *dir;
     struct dirent *arg;
     char *dir_name= "."; 
-
+    char ** files = malloc(MAX_FILES * sizeof(char*));
+    int count=0;
     dir = opendir(dir_name);
 
     if (dir == NULL) {
@@ -94,13 +98,62 @@ void lsCommand(char **args, int argc){
     }
 
     while ((arg = readdir(dir)) != NULL) {
-        printf("%s\n",arg->d_name);
+        files[count] = strdup(arg->d_name);
+        count++;
+    }
+
+    for(int i = 0; i < count-1; i++) {
+        for(int j = 0; j < count-i-1; j++) {
+            if(strcmp(files[j], files[j+1]) > 0) {
+                char *temp = files[j];
+                files[j] = files[j+1];
+                files[j+1] = temp;
+            }
+        }
+    }
+    if(args[1]==NULL){
+        for(int i=0; i<count; i++){
+            printf("%s\n", files[i]);
+        }
+    }else if(strcmp(args[1],"-la")==0){
+        for(int i=0; i<count; i++){
+            if(lstat(files[i], &file_stat)==0){
+            char permissions[11];
+            //determines the file type (symlink, directory or regular file)
+            if(S_ISDIR(file_stat.st_mode)){
+                permissions[0] = 'd';
+            }else if(S_ISLNK(file_stat.st_mode)) permissions[0] = 'l';
+            else permissions[0] = '-';
+            //File_stat.st_mode is a bit string indicating permission bits of a file
+            //The & operator is a bit comparator, he compares if the file has a specific bit active
+            //User permissions
+            permissions[1] = (file_stat.st_mode & S_IRUSR) ? 'r' : '-'; 
+            permissions[2] = (file_stat.st_mode & S_IWUSR) ? 'w' : '-';
+            permissions[3] = (file_stat.st_mode & S_IXUSR) ? 'x' : '-';
+            //Group permissions
+            permissions[4] = (file_stat.st_mode & S_IRGRP) ? 'r' : '-';
+            permissions[5] = (file_stat.st_mode & S_IWGRP) ? 'w' : '-';
+            permissions[6] = (file_stat.st_mode & S_IXGRP) ? 'x' : '-';
+            //Others permissions
+            permissions[7] = (file_stat.st_mode & S_IROTH) ? 'r' : '-';
+            permissions[8] = (file_stat.st_mode & S_IWOTH) ? 'w' : '-';
+            permissions[9] = (file_stat.st_mode & S_IXOTH) ? 'x' : '-';
+            //end string
+            permissions[10] = '\0';
+            printf("%s %3ld %8ld %s\n", permissions, file_stat.st_nlink, file_stat.st_size, files[i]);
+            }
+        }    
+    }
+
+    for(int i=0; i<count; i++){
+        free(files[i]);
     }
 
     if (errno != 0) {
         perror("Error to show files");
     }
-
+    
+    free(files);
     closedir(dir);
     return;
 }
@@ -120,7 +173,7 @@ void whichCommand(char *command, char **args, int argc){
 
 int main(int argc, char * argv[]){
     char inputString[MAXLETTERS];
-    printf("Mini Shell iniciado. Digite comandos:\n");
+    printf("Shell initiated, ready to run commands:\n");
     
     while(1){
         if(readingInput(inputString)){
