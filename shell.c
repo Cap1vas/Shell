@@ -7,12 +7,19 @@
 #include <dirent.h>
 #include <errno.h>
 #include <sys/stat.h>
-
+#include <grp.h>
 
 #define MAXLETTERS 10000
 #define MAXARGS 100
 #define MAX_FILES 300
 
+
+int getGidCurrentUser(){
+    gid_t gid = getgid();
+    printf("GID %d", gid);
+    return gid;  
+
+}
 void whichCommand(char *command, char **args, int argc);
 void cdCommand(char ** args, int argc);
 void parseCommand(char *input, char **args, int *argc);
@@ -73,6 +80,30 @@ void pwdCommand(char **args, int argc){
     }
 }
 
+void mkdirCommand(char **args, int argc){
+    if(argc<2){
+        printf("mkdir: few arguments. usage mkdir <dir-name>\n");
+        return;
+    }else if(strcmp(args[1],"--help)")==0){
+        printf("mkdir: usage mkdir <dir-name>\n -p --> create a dir at a specific location");
+    }else if(strcmp(args[1],"-p")==0){
+        int status = mkdir(args[2],0777);
+        if(status == 0){
+            printf("Dir created");
+        }else{
+            perror("Could not create dir");
+        }
+    }else{
+        int status = mkdir(args[1],0777);
+        if(status == 0){
+            printf("Dir created");
+        }else{
+            perror("Could not create dir");
+        } 
+    }
+
+}
+
 void cdCommand(char ** args, int argc){
     if(argc < 2) {
         printf("cd: Few arguments\n");
@@ -85,13 +116,14 @@ void cdCommand(char ** args, int argc){
 
 void lsCommand(char **args, int argc){
     struct stat file_stat;
+    errno = 0;
     DIR *dir;
-    struct dirent *arg;
-    char *dir_name= "."; 
+    struct dirent *arg;    
+    int is_la = (args[1] != NULL && strcmp(args[1], "-la") == 0);
+    char *dir_name = is_la ? (args[2]==NULL? "." : args[2]) : (args[1]==NULL? "." : args[1]);
     char ** files = malloc(MAX_FILES * sizeof(char*));
     int count=0;
     dir = opendir(dir_name);
-
     if (dir == NULL) {
         perror("Couldn't open the desired dir");
         return;
@@ -111,13 +143,15 @@ void lsCommand(char **args, int argc){
             }
         }
     }
-    if(args[1]==NULL){
+    if(is_la){
+        char full_path[1024];
         for(int i=0; i<count; i++){
-            printf("%s\n", files[i]);
-        }
-    }else if(strcmp(args[1],"-la")==0){
-        for(int i=0; i<count; i++){
-            if(lstat(files[i], &file_stat)==0){
+            if (strcmp(dir_name, ".") == 0) {
+                strcpy(full_path, files[i]);  
+            } else {
+                snprintf(full_path, sizeof(full_path), "%s/%s", dir_name, files[i]);
+            }
+            if(lstat(full_path, &file_stat)==0){
             char permissions[11];
             //determines the file type (symlink, directory or regular file)
             if(S_ISDIR(file_stat.st_mode)){
@@ -143,11 +177,17 @@ void lsCommand(char **args, int argc){
             printf("%s %3ld %8ld %s\n", permissions, file_stat.st_nlink, file_stat.st_size, files[i]);
             }
         }    
+       
+    }else{
+        for(int i=0; i<count; i++){
+            printf("%s\n", files[i]);
+        }
     }
 
     for(int i=0; i<count; i++){
         free(files[i]);
     }
+
 
     if (errno != 0) {
         perror("Error to show files");
@@ -166,6 +206,8 @@ void whichCommand(char *command, char **args, int argc){
         pwdCommand(args, argc);
     } else if(strcmp((command),"ls")==0){
         lsCommand(args,argc);
+    }else if(strcmp((command),"mkdir")==0){
+        mkdirCommand(args,argc);
     }else {
         printf("Unknown command: %s\n", command);
     }
